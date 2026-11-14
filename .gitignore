@@ -1,0 +1,15 @@
+# Compiled programs
+inspect
+inode_inspect
+directory_inspect
+xv6_fuse
+
+# Object files
+*.o
+
+# Filesystem images and backups
+*.img
+*.img.backup
+
+# Temporary files
+*.tmp
