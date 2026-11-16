@@ -22,6 +22,7 @@ struct superblock {
 #define NDIRECT 12
 #define NINDIRECT (BSIZE / sizeof(uint32_t))
 #define IPB (BSIZE / sizeof(struct dinode))
+#define MAXFILE (NDIRECT + NINDIRECT)
 
 struct dinode {
     int16_t type;
