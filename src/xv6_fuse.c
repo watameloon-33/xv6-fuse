@@ -34,38 +34,6 @@ static int read_inode(uint32_t inum, struct dinode *inode) {
     return 0;
 }
 
-// Find a file in the root directory
-static int find_root_entry(const char *name, uint16_t *inum) {
-    struct dinode root;
-
-    if (read_inode(ROOTINO, &root) < 0)
-        return -1;
-
-    for (int b = 0; b < NDIRECT && root.addrs[b] != 0; b++) {
-        struct dirent entries[BSIZE / sizeof(struct dirent)];
-
-        if (pread(image_fd, entries, BSIZE,
-                  (off_t)root.addrs[b] * BSIZE) != BSIZE)
-            return -1;
-
-        for (size_t i = 0; i < BSIZE / sizeof(struct dirent); i++) {
-            char entry_name[DIRSIZ + 1];
-
-            if (entries[i].inum == 0)
-                continue;
-
-            memcpy(entry_name, entries[i].name, DIRSIZ);
-            entry_name[DIRSIZ] = '\0';
-
-            if (strcmp(entry_name, name) == 0) {
-                *inum = entries[i].inum;
-                return 0;
-            }
-        }
-    }
-
-    return -1;
-}
 // Get the physical disk block containing a file's data
 static int get_data_block(struct dinode *inode,
                           uint32_t file_block,
@@ -191,15 +159,9 @@ static int xv6_read(const char *path, char *buf,
     if (offset < 0)
         return -EINVAL;
 
-    if (strcmp(path, "/") == 0)
-        return -EISDIR;
-
-    if (path[0] != '/' || strchr(path + 1, '/') != NULL)
-        return -ENOENT;
-
     uint16_t inum;
 
-    if (find_root_entry(path + 1, &inum) < 0)
+    if (resolve_path(path, &inum) < 0)
         return -ENOENT;
 
     struct dinode inode;
@@ -256,20 +218,13 @@ static int xv6_getattr(const char *path, struct stat *st,
 
     struct dinode inode;
 
-    if (strcmp(path, "/") == 0) {
-        if (read_inode(ROOTINO, &inode) < 0)
-            return -EIO;
-    } else {
-        uint16_t inum;
-        if (path[0] != '/' || strchr(path + 1, '/') != NULL)
-            return -ENOENT;
+    uint16_t inum;
 
-        if (find_root_entry(path + 1, &inum) < 0)
-            return -ENOENT;
+    if (resolve_path(path, &inum) < 0)
+        return -ENOENT;
 
-        if (read_inode(inum, &inode) < 0)
-            return -EIO;
-    }
+    if (read_inode(inum, &inode) < 0)
+        return -EIO;
 
     if (inode.type == 1) {
     st->st_mode = S_IFDIR | 0755;
@@ -301,37 +256,52 @@ static int xv6_readdir(const char *path, void *buf,
     (void)fi;
     (void)flags;
 
-    if (strcmp(path, "/") != 0)
-        return -ENOENT;
+    uint16_t inum;
 
-    struct dinode root;
+     if (resolve_path(path, &inum) < 0)
+    return -ENOENT;
 
-    if (read_inode(ROOTINO, &root) < 0)
-        return -EIO;
+    struct dinode dir;
+
+    if (read_inode(inum, &dir) < 0)
+    return -EIO;
+
+    if (dir.type != 1)
+    return -ENOTDIR;
 
     filler(buf, ".", NULL, 0, 0);
     filler(buf, "..", NULL, 0, 0);
 
-    for (int b = 0; b < NDIRECT && root.addrs[b] != 0; b++) {
-        struct dirent entries[BSIZE / sizeof(struct dirent)];
+    uint32_t num_blocks = (dir.size + BSIZE - 1) / BSIZE;
 
-        if (pread(image_fd, entries, BSIZE,
-                  (off_t)root.addrs[b] * BSIZE) != BSIZE)
-            return -EIO;
+for (uint32_t b = 0; b < num_blocks; b++) {
+    uint32_t disk_block;
 
-        for (size_t i = 0; i < BSIZE / sizeof(struct dirent); i++) {
-            if (entries[i].inum == 0)
-                continue;
+    if (get_data_block(&dir, b, &disk_block) < 0)
+        return -EIO;
 
-            char name[DIRSIZ + 1];
-            memcpy(name, entries[i].name, DIRSIZ);
-            name[DIRSIZ] = '\0';
+    if (disk_block == 0)
+        continue;
 
-            if (strcmp(name, ".") != 0 &&
-                strcmp(name, "..") != 0)
-                filler(buf, name, NULL, 0, 0);
-        }
-    }
+    struct dirent entries[BSIZE / sizeof(struct dirent)];
+
+    if (pread(image_fd, entries, BSIZE,
+              (off_t)disk_block * BSIZE) != BSIZE)
+        return -EIO;
+
+    for (size_t i = 0; i < BSIZE / sizeof(struct dirent); i++) {
+        if (entries[i].inum == 0)
+            continue;
+
+        char name[DIRSIZ + 1];
+        memcpy(name, entries[i].name, DIRSIZ);
+        name[DIRSIZ] = '\0';
+
+        if (strcmp(name, ".") != 0 &&
+            strcmp(name, "..") != 0)
+            filler(buf, name, NULL, 0, 0);
+           }
+        } 
 
     return 0;
 }
