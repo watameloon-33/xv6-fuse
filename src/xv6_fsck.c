@@ -168,7 +168,13 @@ int main(int argc, char *argv[]) {
             }
         }
     }
-
+     // Check for allocated blocks that are not referenced by any inode
+    for (uint32_t block = data_start; block < sb.size; block++) {
+    if (bitmap_allocated(block) && !used[block]) {
+        printf("ERROR: block %u is allocated but not used\n", block);
+        errors++;
+    }
+}
     printf("\nFilesystem check complete.\n");
 
     if (errors == 0)

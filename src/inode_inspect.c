@@ -3,15 +3,15 @@
 #include <stdint.h>
 #include <fcntl.h>
 #include <unistd.h>
-
+#include <stdlib.h>
 #include "../include/xv6_fs.h"
 
 int main(int argc, char *argv[]) {
 
-    if (argc != 2) {
-        printf("Usage: %s <filesystem-image>\n", argv[0]);
-        return 1;
-    }
+    if (argc != 3) {
+    printf("Usage: %s <filesystem-image> <inode-number>\n", argv[0]);
+    return 1;
+}
 
     int fd = open(argv[1], O_RDONLY);
 
@@ -35,8 +35,14 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    // Root inode number
-    uint32_t inum = 1;
+    // Inode number supplied by the user
+uint32_t inum = (uint32_t)strtoul(argv[2], NULL, 10);
+
+if (inum == 0 || inum >= sb.ninodes) {
+    printf("Invalid inode number\n");
+    close(fd);
+    return 1;
+}
 
     // Calculate inode location
     uint32_t block = inum / IPB + sb.inodestart;
@@ -51,7 +57,7 @@ int main(int argc, char *argv[]) {
         return 1;
     }
 
-    printf("Root inode successfully read!\n\n");
+    printf("Inode successfully read!\n\n");
     printf("Inode number: %u\n", inum);
     printf("Inode block: %u\n", block);
     printf("Type: %d\n", inode.type);

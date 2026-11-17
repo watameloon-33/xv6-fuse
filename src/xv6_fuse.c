@@ -135,7 +135,7 @@ static int ialloc(uint16_t type, uint16_t *result) {
 // Free all data blocks belonging to an inode
 static int itrunc(struct dinode *inode) {
     // Free direct blocks
-    for (int i = 0; i < NDIRECT; i++) {
+    for (uint32_t i = 0; i < NINDIRECT; i++) {
         if (inode->addrs[i] != 0) {
             if (bfree(inode->addrs[i]) < 0)
                 return -1;
@@ -152,7 +152,7 @@ static int itrunc(struct dinode *inode) {
                   (off_t)inode->addrs[NDIRECT] * BSIZE) != BSIZE)
             return -1;
 
-        for (int i = 0; i < NINDIRECT; i++) {
+        for (uint32_t i = 0; i < NINDIRECT; i++) {
             if (indirect[i] != 0) {
                 if (bfree(indirect[i]) < 0)
                     return -1;
@@ -545,9 +545,20 @@ static int xv6_mkdir(const char *path, mode_t mode) {
         return -EIO;
 
     if (dirlink(parent_inum, name, new_inum) < 0)
-        return -EIO;
+    return -EIO;
 
-    return 0;
+// Increment the parent's link count for the new subdirectory
+struct dinode parent;
+
+if (read_inode(parent_inum, &parent) < 0)
+    return -EIO;
+
+parent.nlink++;
+
+if (write_inode(parent_inum, &parent) < 0)
+    return -EIO;
+
+return 0;
 }
 // Delete a regular file
 static int xv6_unlink(const char *path) {

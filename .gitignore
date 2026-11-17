@@ -1,4 +1,4 @@
-# Compiled programs
+echo "xv6_fsck" >> .gitignore# Compiled programs
 inspect
 inode_inspect
 directory_inspect
@@ -13,3 +13,4 @@ xv6_fuse
 
 # Temporary files
 *.tmp
+xv6_fsck
