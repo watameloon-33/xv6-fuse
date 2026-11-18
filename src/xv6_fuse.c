@@ -135,7 +135,7 @@ static int ialloc(uint16_t type, uint16_t *result) {
 // Free all data blocks belonging to an inode
 static int itrunc(struct dinode *inode) {
     // Free direct blocks
-    for (uint32_t i = 0; i < NINDIRECT; i++) {
+    for (uint32_t i = 0; i < NDIRECT; i++) {
         if (inode->addrs[i] != 0) {
             if (bfree(inode->addrs[i]) < 0)
                 return -1;
