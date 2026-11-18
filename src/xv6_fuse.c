@@ -760,6 +760,7 @@ static int xv6_write(const char *path, const char *buf,
 }
 
 // Change the size of an existing xv6 file
+
 static int xv6_truncate(const char *path, off_t new_size,
                         struct fuse_file_info *fi) {
     (void)fi;
@@ -780,7 +781,8 @@ static int xv6_truncate(const char *path, off_t new_size,
     if (inode.type != 2)
         return -EISDIR;
 
-    uint32_t old_blocks = (inode.size + BSIZE - 1) / BSIZE;
+    uint32_t old_size = inode.size;
+    uint32_t old_blocks = (old_size + BSIZE - 1) / BSIZE;
     uint32_t new_blocks = ((uint32_t)new_size + BSIZE - 1) / BSIZE;
 
     // Load the indirect block, if present
@@ -831,28 +833,32 @@ static int xv6_truncate(const char *path, off_t new_size,
         }
     }
 
-    // Zero the unused tail of the final retained block
-    if ((uint32_t)new_size < inode.size &&
+    // Zero the unused tail when shrinking
+    if ((uint32_t)new_size < old_size &&
         new_size > 0 &&
         (uint32_t)new_size % BSIZE != 0) {
 
         uint32_t last_block;
         uint32_t index = (uint32_t)new_size / BSIZE;
 
-        if (get_data_block(&inode, index, &last_block) == 0) {
+        if (get_data_block(&inode, index, &last_block) < 0)
+            return -EIO;
+
+        uint32_t start = (uint32_t)new_size % BSIZE;
+
+        if (last_block != 0) {
             char zeros[BSIZE] = {0};
-            uint32_t start = (uint32_t)new_size % BSIZE;
 
             if (pwrite(image_fd, zeros, BSIZE - start,
                        (off_t)last_block * BSIZE + start)
-                != BSIZE - start)
+                != (ssize_t)(BSIZE - start))
                 return -EIO;
         }
     }
 
-    // If extending, zero any newly exposed bytes in already allocated blocks
-    if (new_size > inode.size) {
-        uint32_t start = inode.size;
+    // Zero newly exposed bytes when extending
+    if (new_size > old_size) {
+        uint32_t start = old_size;
         uint32_t end = (uint32_t)new_size;
 
         while (start < end) {
@@ -860,24 +866,25 @@ static int xv6_truncate(const char *path, off_t new_size,
             uint32_t block_offset = start % BSIZE;
             uint32_t disk_block;
 
-            if (get_data_block(&inode, index, &disk_block) == 0) {
-                uint32_t count = BSIZE - block_offset;
+            if (get_data_block(&inode, index, &disk_block) < 0)
+                return -EIO;
 
-                if (count > end - start)
-                    count = end - start;
+            uint32_t count = BSIZE - block_offset;
 
+            if (count > end - start)
+                count = end - start;
+
+            // Never write into disk block zero
+            if (disk_block != 0) {
                 char zeros[BSIZE] = {0};
 
                 if (pwrite(image_fd, zeros, count,
                            (off_t)disk_block * BSIZE + block_offset)
-                    != count)
+                    != (ssize_t)count)
                     return -EIO;
-
-                start += count;
-            } else {
-                // An unallocated block is already a logical zero-filled hole
-                start = (index + 1) * BSIZE;
             }
+
+            start += count;
         }
     }
 
@@ -888,6 +895,7 @@ static int xv6_truncate(const char *path, off_t new_size,
 
     return 0;
 }
+
 // Tell Linux about file metadata
 static int xv6_getattr(const char *path, struct stat *st,
                        struct fuse_file_info *fi) {
